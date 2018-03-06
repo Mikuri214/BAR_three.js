@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title></title>
+    <style>
+        canvas { width: 100%; height: 100% }
+    </style>
+</head>
+
+<body onload="main()">
+
+    <script src="three.js-master/jquery-3.2.1.js"></script>
+    <script src="three.js-master/build/three.js"></script>
+
+    <script src="three.js-master/examples/js/shaders/FresnelShader.js"></script>
+    <script src="three.js-master/src/renderers/webgl/WebGLShader.js"></script>
+    <script src="three.js-master/src/renderers/shaders/ShaderLib.js"></script>
+    <script src="three.js-master/examples/js/renderers/Projector.js"></script>
+
+    <script src="libs/OrbitControls.js"></script>
+
+    <script src="libs/Projector.js"></script>
+
+    <script src="three.js-master/examples/js/loaders/OBJLoader.js"></script>
+    <script type="text/javascript" src="bar.js"></script>
+
+
+    <script type="text/javascript">
+        //'use strict';
+        /*Physijs.scripts.worker = 'libs/physijs_worker.js';
+        Physijs.scripts.ammo = 'ammo.js';*/
+
+        var scene = new THREE.Scene();
+        
+        var camera = new THREE.PerspectiveCamera(20, window.innerWidth / window.innerHeight, 0.1, 1000);
+        var renderer = new THREE.WebGLRenderer({antialias: true});
+        var axes = null;
+        var projector = new THREE.Projector();
+        var sphArray = new Array();
+        var speed = new Array();
+        var rotat = new Array();
+        var box;
+        var envMap;
+        var bubbles = [];
+
+        function main()
+        {
+            //scene.setGravity(new THREE.Vector3(0,-90,0));
+
+            var path = "pic/";
+            var urls = [
+                path+"px.png",path+"nx.png",
+                path+"py.png",path+"ny.png",
+                path+"pz.png",path+"nz.png"
+            ];
+            envMap = THREE.ImageUtils.loadTextureCube(urls);
+
+            var box_shader = THREE.ShaderLib["cube"];
+            box_shader.uniforms["tCube"].value = envMap;
+            var box_mat = new THREE.ShaderMaterial({
+                fragmentShader: box_shader.fragmentShader,
+                vertexShader: box_shader.vertexShader,
+                uniforms: box_shader.uniforms,
+                side: THREE.BackSide
+            });
+
+            box = new THREE.Mesh(new THREE.CubeGeometry(60,60,60), box_mat);
+            box.receiveShadow = true;
+            scene.add(box);
+
+
+            renderer.setClearColor(0x000000);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            renderer.shadowMapEnabled = true;
+
+            axes = new THREE.AxisHelper(20);
+            scene.add(axes);
+
+            camera.position.set(-30, 40, 30);
+            camera.lookAt(scene.position);
+            scene.add(camera);
+
+
+            var tex = THREE.ImageUtils.loadTexture("pic/wood_for_desk.jpg");
+            var nor = THREE.ImageUtils.loadTexture("pic/wood_for_desk.jpg");
+
+            var planeGeometry = new THREE.PlaneGeometry(80, 80, 80, 100);
+            var planeMaterial = new THREE.MeshLambertMaterial({color: '#272727', shininess: 20});
+            planeMaterial.map = tex;
+            planeMaterial.normalMap = nor;
+
+            var plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = -0.5 * Math.PI;
+            plane.position.set(-10,-10,0);
+            plane.receiveShadow = true;
+            scene.add(plane);
+
+            var spotLight = new THREE.SpotLight(0xFFFFFF);
+            spotLight.position.set(-10, 50, -10);
+            spotLight.intensity = 0.8;
+            spotLight.distance = 0;
+            spotLight.angle = Math.PI/3;
+            spotLight.castShadow = true;
+            spotLight.shadowMapWidth = 2048;
+            spotLight.shadowMapHeight = 2048;
+            scene.add(spotLight);
+
+            var aLight = new THREE.AmbientLight(0xFFFFFF);
+            scene.add(aLight);
+
+
+            for(var i=0; i<7; i++)
+            {
+                calTarget();
+            }
+
+            for(var i=0; i<sphArray.length; i++)
+            {
+                addPointLight(sphArray[i]);
+                if(i%2 == 0) {
+                    speed[i] = Math.random();
+                    rotat[i] = Math.random();
+                }
+                else
+                {
+                    speed[i] = Math.random();
+                    rotat[i] = Math.random();
+                }
+
+            }
+
+            document.addEventListener('mousedown', onDocumentMouseDown, false);
+
+            addBubble();
+
+            loadOBJ('sphBottle1_model2.obj', -4, 1.5, 2, 1.3, 1.3, 1.3);
+            loadOBJ('wineBottle2_model4.obj', 4, 0, 2, 3.0, 3.0, 3.0);
+            loadOBJ('1cup.obj', 10, -10, 8,  0.2, 0.3, 0.2);
+            loadOBJ('2cup.obj', 8, -10, 8,  0.2, 0.2, 0.2);
+
+            controls = new THREE.OrbitControls( camera );
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            draw();
+        }
+
+
+        function updateControls()
+        {
+            controls.update();
+        }
+
+        function onDocumentMouseDown(event)
+        {
+
+            var vector = new THREE.Vector3(( event.clientX / window.innerWidth ) * 2 - 1, -( event.clientY / window.innerHeight ) * 2 + 1, 0.5);
+            vector = vector.unproject(camera);
+
+            var raycaster = new THREE.Raycaster(camera.position, vector.sub(camera.position).normalize());
+
+            var intersects = raycaster.intersectObjects(bubbles);
+
+            //console.log(intersects.length);
+            if (intersects.length > 0)
+            {
+                alert(intersects[0]);
+                //alert(scene.children.length);
+                /*intersects[0].object.material.transparent = true;
+                intersects[0].object.material.opacity = 0.1;*/
+                //scene.remove(intersects[0]);
+            }
+        }
+
+
+
+        function loadOBJ(src, x, y, z, sx, sy ,sz)
+        {
+            var obj_shader = THREE.FresnelShader;
+            var uniforms = THREE.UniformsUtils.clone(obj_shader.uniforms);
+            uniforms["tCube"].value = envMap;
+            uniforms["mFresnelScale"].value = 1.5;
+            uniforms["mRefractionRatio"].value = 1.1;
+            var parameters =
+                {
+                  fragmentShader: obj_shader.fragmentShader,
+                  vertexShader: obj_shader.vertexShader,
+                  uniforms: uniforms
+                };
+            var ref_material = new THREE.ShaderMaterial(parameters);
+
+
+            var loader = new THREE.OBJLoader();
+
+            loader.load(src, function (obj)
+            {
+                obj.traverse(function (child)
+                {
+                    if (child instanceof THREE.Mesh)
+                    {
+                        //child.material = obj_material;
+                        child.material = ref_material;
+                        child.geometry.computeFaceNormals();
+                        child.geometry.computeVertexNormals();
+                        child.castShadow = true;
+                    }
+                });
+                obj.scale.set(sx, sy, sz);
+                obj.position.set(x, y, z);
+                scene.add(obj);
+            });
+        }
+
+        function draw()
+        {
+            for(var i=0; i<sphArray.length; i++)
+            {
+                if(i<sphArray.length/2)
+                {
+                    moveTargetX(sphArray[i]);
+                }
+                else
+                {
+                    moveTargetZ(sphArray[i]);
+                }
+            }
+
+            var timer = 0.0001 * Date.now();
+            for ( var i = 0, il = bubbles.length; i < il; i ++ )
+            {
+
+                var bubble = bubbles[i];
+
+                bubble.position.x = 20 * Math.cos( timer + i );
+                bubble.position.y = 20 * Math.sin( timer + i * 1.1 );
+            }
+
+
+            requestAnimationFrame(draw);
+            renderer.render(scene, camera);
+            //scene.simulate(undefined, 1);
+            updateControls();
+        }
+
+
+        function addPointLight(sph)
+        {
+            var light = new THREE.SpotLight(Math.random() * 0xffffff);
+            light.position.set(-5, 30, -5);
+            light.intensity = 10;
+            light.angle = Math.PI/150;
+            light.castShadow = true;
+            light.target = sph;
+            light.shadowMapWidth = 2048;
+            light.shadowMapHeight = 2048;
+            scene.add(light);
+        }
+
+        function calTarget()
+        {
+            var cub = new THREE.CubeGeometry(2,2,2);
+            var met = new THREE.MeshLambertMaterial({
+                color: Math.random() * 0xffffff,
+                transparent: true,
+                opacity: 0.0
+            });
+            var sph = new THREE.Mesh(cub, met);
+            sph.position.set(-4, 6, 0);
+            sph.position.x = (Math.random()-0.5)*40;
+            sph.position.z = (Math.random()-0.5)*40;
+            sphArray.push(sph);
+            scene.add(sph);
+        }
+
+        var step = 0.0;
+        function moveTargetX(sph)
+        {
+            step += 0.01;
+            sph.position.x = (10*rotat[sphArray.indexOf(sph)] * (Math.cos(step + speed[sphArray.indexOf(sph)])));
+            sph.position.y = 2 + (10 * Math.sin(step));
+        }
+        function moveTargetZ(sph)
+        {
+            step += 0.01;
+            sph.position.z = (10 *rotat[sphArray.indexOf(sph)] * (Math.cos(step + speed[sphArray.indexOf(sph)])));
+            sph.position.y = 2 + (10 * Math.sin(step));
+        }
+        
+        function addBubble()
+        {
+            for ( var i = 0; i < 70; i ++ )
+            {
+                var bub_geo = new THREE.SphereGeometry(0.5,80);
+
+                var obj_shader = THREE.FresnelShader;
+                var uniforms = THREE.UniformsUtils.clone(obj_shader.uniforms);
+                uniforms["tCube"].value = envMap;
+                uniforms["mFresnelScale"].value = 0.8;
+                uniforms["mRefractionRatio"].value = 1.03;
+                var parameters =
+                    {
+                        fragmentShader: obj_shader.fragmentShader,
+                        vertexShader: obj_shader.vertexShader,
+                        uniforms: uniforms
+                    };
+                var ref_material = new THREE.ShaderMaterial(parameters);
+
+                var Bubble = new THREE.Mesh(bub_geo, ref_material);
+
+                Bubble.position.x = Math.random() * 100 - 50;
+                Bubble.position.y = Math.random() * 50;
+                Bubble.position.z = Math.random() * 100 - 50;
+
+                Bubble.scale.x = Bubble.scale.y = Bubble.scale.z = Math.random() * 3 + 1;
+
+                scene.add(Bubble);
+                bubbles.push(Bubble);
+            }
+        }
+
+    window.onload = main;
+</script>
+</body>
+</html>
